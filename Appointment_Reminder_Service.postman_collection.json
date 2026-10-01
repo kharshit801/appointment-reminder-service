@@ -1,0 +1,252 @@
+{
+	"info": {
+		"_postman_id": "appointment-reminder-api",
+		"name": "Appointment Reminder Service",
+		"description": "API collection for the Appointment Booking/Reminder Service demo",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8080/actuator/health",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"actuator",
+						"health"
+					]
+				},
+				"description": "Check if the application and database are healthy"
+			},
+			"response": []
+		},
+		{
+			"name": "Create Appointment - Demo (3 min from now)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"dealershipId\": \"dealer-demo\",\n  \"customerName\": \"John Smith\",\n  \"customerContact\": \"john@example.com\",\n  \"scheduledAt\": \"2026-10-02T00:50:00Z\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8080/appointments",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"appointments"
+					]
+				},
+				"description": "Create an appointment scheduled 3 minutes from now.\n\n**For your demo:** Update the `scheduledAt` time to be ~3 minutes in the future so reminders fire during recording.\n\nReturns:\n- 201 Created\n- Location header with appointment URL\n- Appointment details with 2 reminders (T-2m and T-30s)"
+			},
+			"response": []
+		},
+		{
+			"name": "Create Appointment - Jane Doe",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"dealershipId\": \"dealer-123\",\n  \"customerName\": \"Jane Doe\",\n  \"customerContact\": \"jane.doe@example.com\",\n  \"scheduledAt\": \"2026-10-05T15:00:00Z\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8080/appointments",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"appointments"
+					]
+				},
+				"description": "Create another sample appointment"
+			},
+			"response": []
+		},
+		{
+			"name": "Create Appointment - Bob Wilson",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"dealershipId\": \"dealer-456\",\n  \"customerName\": \"Bob Wilson\",\n  \"customerContact\": \"+1-555-0100\",\n  \"scheduledAt\": \"2026-10-03T10:30:00Z\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8080/appointments",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"appointments"
+					]
+				},
+				"description": "Create appointment with phone number contact"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Appointment by ID",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8080/appointments/:id",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"appointments",
+						":id"
+					],
+					"variable": [
+						{
+							"key": "id",
+							"value": "PASTE_UUID_HERE",
+							"description": "Replace with the UUID from the Location header or response body"
+						}
+					]
+				},
+				"description": "Fetch an appointment by its UUID.\n\n**Usage:** Copy the UUID from the Location header or `id` field after creating an appointment, then paste it in the path variable."
+			},
+			"response": []
+		},
+		{
+			"name": "Validation Error - Missing Fields",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"dealershipId\": \"dealer-123\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8080/appointments",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"appointments"
+					]
+				},
+				"description": "Demonstrates validation error handling.\n\nReturns: 400 Bad Request with RFC 7807 problem details"
+			},
+			"response": []
+		},
+		{
+			"name": "Validation Error - Past Appointment",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"dealershipId\": \"dealer-123\",\n  \"customerName\": \"Test User\",\n  \"customerContact\": \"test@example.com\",\n  \"scheduledAt\": \"2020-01-01T10:00:00Z\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8080/appointments",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"appointments"
+					]
+				},
+				"description": "Demonstrates validation error for past appointment time.\n\nReturns: 400 Bad Request"
+			},
+			"response": []
+		},
+		{
+			"name": "Not Found - Invalid UUID",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8080/appointments/00000000-0000-0000-0000-000000000000",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"appointments",
+						"00000000-0000-0000-0000-000000000000"
+					]
+				},
+				"description": "Demonstrates 404 error handling.\n\nReturns: 404 Not Found with RFC 7807 problem details"
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080",
+			"type": "string"
+		}
+	]
+}

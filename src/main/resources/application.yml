@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: appointment-reminder-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://127.0.0.1:5432/appointments}
+    username: ${DB_USERNAME:appointments}
+    password: ${DB_PASSWORD:appointments}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+# Application-specific reminder configuration.
+reminder:
+  # Lead times before the appointment at which reminders are sent.
+  lead-times:
+    - PT24H
+    - PT2H
+  # How often the dispatcher polls for due reminders.
+  poll-interval-ms: 15000
+  # Max reminders claimed per poll cycle (batch size).
+  batch-size: 500
+  # Max delivery attempts before a reminder is parked as FAILED.
+  max-attempts: 5
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.mykaarma: INFO
