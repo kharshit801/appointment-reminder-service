@@ -9,20 +9,20 @@ Book appointments and send reminders at T-24h and T-2h. **Critical requirement:*
 ## Solution Architecture
 
 ```mermaid
-flowchart TB
-    Client([Client]) -->|POST /appointments| Controller[AppointmentController]
-    Controller --> Service[AppointmentService]
-    Service --> Planner[ReminderPlanner]
+flowchart LR
+    Client[Client] -->|POST| API[Controller]
+    API --> Service
+    Service --> DB[(PostgreSQL)]
     
-    Service -->|Single Transaction| DB[(PostgreSQL)]
-    
-    Scheduler[ReminderScheduler<br/>@Scheduled 15s] -->|Poll & Claim| Dispatch[ReminderDispatchService]
-    Dispatch -->|FOR UPDATE<br/>SKIP LOCKED| DB
-    Dispatch --> Sender[NotificationSender]
-    
-    DB -.->|appointment| Table1[appointment table]
-    DB -.->|reminder| Table2[reminder table<br/>UNIQUE constraint<br/>status = PENDING/SENT]
+    Scheduler -->|every 15s| Dispatch[Dispatcher]
+    Dispatch -->|claim & send| DB
 ```
+
+**Key Components:**
+- **appointment table** - stores booking details
+- **reminder table** - work queue + audit log with `UNIQUE(appointment_id, lead_time_seconds)`
+- **Scheduler** - polls every 15s for due reminders
+- **Dispatcher** - uses `FOR UPDATE SKIP LOCKED` to claim reminders safely
 
 ## How Exactly-Once Works
 
