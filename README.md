@@ -53,14 +53,21 @@ FOR UPDATE SKIP LOCKED;
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING: Created at booking
-    PENDING --> SENDING: Claimed by worker
-    SENDING --> SENT: Delivered successfully
-    SENDING --> PENDING: Failed (retry)
-    SENDING --> FAILED: Max attempts reached
-    SENT --> [*]: Terminal (never re-sent)
-    FAILED --> [*]: Terminal (manual review)
+    [*] --> PENDING
+    PENDING --> SENDING
+    SENDING --> SENT
+    SENDING --> PENDING
+    SENDING --> FAILED
+    SENT --> [*]
+    FAILED --> [*]
 ```
+
+**Flow:**
+- `PENDING` → Created at booking
+- `SENDING` → Claimed by dispatcher
+- `SENT` → Delivered (terminal, never re-selected)
+- `FAILED` → Max retries exceeded (terminal)
+- `SENDING → PENDING` → Transient failure, will retry
 
 ## Data Model
 
