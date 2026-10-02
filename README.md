@@ -1,12 +1,14 @@
 # Appointment Reminder Service
 
-A Spring Boot service that books vehicle service appointments and sends automated reminders with **provable exactly-once delivery guarantees**.
+Vehicle service appointment booking with **provably exactly-once reminder delivery**.
 
-## Problem
+## The Problem
 
-Book appointments and send reminders at T-24h and T-2h. **Critical requirement:** A customer must never receive the same reminder twice, and this must be provable from the data.
+Send reminders at T-24h and T-2h. Customer never gets duplicate reminders. Prove it.
 
-## Solution Architecture
+## The Solution
+
+Two-layer guarantee enforced by PostgreSQL:
 
 ```mermaid
 flowchart LR
@@ -18,107 +20,32 @@ flowchart LR
     Dispatch -->|claim & send| DB
 ```
 
-**Key Components:**
-- **appointment table** - stores booking details
-- **reminder table** - work queue + audit log with `UNIQUE(appointment_id, lead_time_seconds)`
-- **Scheduler** - polls every 15s for due reminders
-- **Dispatcher** - uses `FOR UPDATE SKIP LOCKED` to claim reminders safely
-
-## How Exactly-Once Works
-
-The guarantee comes from two layers:
-
-### 1. Database Constraint Prevents Duplicates
-
+**Layer 1: UNIQUE Constraint**
 ```sql
-CREATE UNIQUE INDEX ON reminder (appointment_id, lead_time_seconds);
+UNIQUE (appointment_id, lead_time_seconds)
 ```
+Database rejects duplicate reminder rows.
 
-Even if the application tries to insert duplicate reminders, PostgreSQL rejects them.
-
-### 2. Atomic Claim-and-Process
-
+**Layer 2: Atomic Claim**
 ```sql
-SELECT * FROM reminder 
-WHERE status = 'PENDING' AND send_at <= NOW()
-FOR UPDATE SKIP LOCKED;
+SELECT ... WHERE status = 'PENDING' 
+FOR UPDATE SKIP LOCKED
 ```
-
-- Each worker locks the rows it claims
-- Other workers skip locked rows
-- After successful send: `status = 'SENT'` (terminal)
-- Query filters `WHERE status = 'PENDING'` → SENT rows never re-selected
-
-### State Machine
-
-```mermaid
-stateDiagram-v2
-    [*] --> PENDING
-    PENDING --> SENDING
-    SENDING --> SENT
-    SENDING --> PENDING
-    SENDING --> FAILED
-    SENT --> [*]
-    FAILED --> [*]
-```
-
-**Flow:**
-- `PENDING` → Created at booking
-- `SENDING` → Claimed by dispatcher
-- `SENT` → Delivered (terminal, never re-selected)
-- `FAILED` → Max retries exceeded (terminal)
-- `SENDING → PENDING` → Transient failure, will retry
-
-## Data Model
-
-**appointment**
-```
-id (PK) | public_id (UUID) | dealership_id | customer_name | customer_contact | scheduled_at | status
-```
-
-**reminder** (work queue + audit log)
-```
-id (PK) | appointment_id (FK) | lead_time_seconds | send_at | status | attempts | sent_at
-UNIQUE (appointment_id, lead_time_seconds) ← De-duplication backbone
-INDEX (send_at) WHERE status = 'PENDING' ← Fast polling
-```
-
-## Tech Stack
-
-- Java 17, Spring Boot 3.3
-- PostgreSQL 16 with Flyway
-- JPA/Hibernate
-- Testcontainers for integration tests
+One worker claims, others skip. After send: `status = 'SENT'` (terminal).
 
 ## Quick Start
 
-### Prerequisites
-- Java 17+
-- Docker
-
-### Run
-
 ```bash
-# Start database
 docker compose up -d
-
-# Run application
 ./mvnw spring-boot:run
 ```
 
-Application starts at `http://localhost:8080`
-
-### Demo with Short Reminder Times
-
+**Demo mode (2min reminders):**
 ```bash
 REMINDER_LEAD_TIMES=PT2M,PT30S ./mvnw spring-boot:run
 ```
 
-Then book an appointment 3 minutes out to see reminders fire immediately.
-
-## API
-
-### Create Appointment
+## API Example
 
 ```bash
 curl -X POST http://localhost:8080/appointments \
@@ -131,133 +58,118 @@ curl -X POST http://localhost:8080/appointments \
   }'
 ```
 
-Response: `201 Created`
+**Returns:**
 ```json
 {
   "id": "uuid",
-  "status": "BOOKED",
   "reminders": [
-    {"label": "T-24h", "status": "PENDING", "sendAt": "2026-10-04T15:00:00Z"},
-    {"label": "T-2h", "status": "PENDING", "sendAt": "2026-10-05T13:00:00Z"}
+    {"label": "T-24h", "status": "PENDING"},
+    {"label": "T-2h", "status": "PENDING"}
   ]
 }
 ```
 
-### Get Appointment
+## Data Model
+
+```
+appointment: id | public_id | dealership_id | customer_name | scheduled_at | status
+reminder:    id | appointment_id | lead_time_seconds | send_at | status | sent_at
+             UNIQUE (appointment_id, lead_time_seconds) ← The guarantee
+```
+
+## How It Works
+
+**Booking:** Single transaction creates appointment + 2 reminder rows.
+
+**Dispatch:** Scheduler polls every 15s. Claims due reminders with `FOR UPDATE SKIP LOCKED`. Sends. Marks `SENT`.
+
+**States:** `PENDING → SENDING → SENT` (or `FAILED` after retries)
+
+**Proof:** Query `reminder` table. Each appointment has exactly 2 rows. Each row has exactly one `sent_at` timestamp.
+
+## Why It Never Duplicates
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING
+    PENDING --> SENDING
+    SENDING --> SENT
+    SENDING --> PENDING
+    SENDING --> FAILED
+    SENT --> [*]
+    FAILED --> [*]
+```
+
+**Query filters `WHERE status = 'PENDING'`**
+
+Once `SENT`, never re-selected. Database-enforced, not app logic.
+
+## Tech Stack
+
+Java 17 • Spring Boot 3.3 • PostgreSQL 16 • Flyway • Testcontainers
+
+## Tests
 
 ```bash
-curl http://localhost:8080/appointments/{id}
+./mvnw test  # 15 tests, all pass
 ```
 
-## Configuration
-
-`application.yml`:
-```yaml
-reminder:
-  lead-times: [PT24H, PT2H]        # When reminders fire
-  poll-interval-ms: 15000           # Dispatcher poll frequency
-  batch-size: 500                   # Reminders per poll
-  max-attempts: 5                   # Retries before FAILED
-```
-
-Override with environment variables:
-```bash
-REMINDER_LEAD_TIMES=PT1H,PT30M ./mvnw spring-boot:run
-```
-
-## Testing
-
-```bash
-./mvnw test
-```
-
-**Test Coverage (15 tests, all passing):**
+**Coverage:**
 - `AppointmentApiIntegrationTest` – HTTP contract
-- `ReminderIdempotencyIntegrationTest` – Exactly-once guarantees, concurrent dispatch
+- `ReminderIdempotencyIntegrationTest` – Exactly-once under concurrent load (8 threads)
 - `ReminderRetryIntegrationTest` – Failure handling
-- `ReminderPlannerTest` – Edge cases (past appointments)
+- `ReminderPlannerTest` – Edge cases
 
 All tests use Testcontainers with real PostgreSQL.
 
 ## Design Decisions
 
-### Materialized Reminders
-Create reminder rows at booking time, not computed on-the-fly. This enables:
-- Database-level UNIQUE constraint (strongest de-dupe)
-- Durable audit trail
-- Simple indexed queue poll
+**Materialized reminders** – Create rows at booking, not computed on-the-fly. Enables UNIQUE constraint.
 
-### FOR UPDATE SKIP LOCKED
-Safe concurrent processing without coordination. Multiple app instances can run simultaneously - each claims different rows.
+**FOR UPDATE SKIP LOCKED** – Safe concurrent processing. Multiple instances = automatic load distribution.
 
-### Separate Claim & Delivery Transactions
-- Claim batch: flip PENDING → SENDING in one transaction
-- Deliver each: independent `REQUIRES_NEW` transaction
-- One failure doesn't roll back entire batch
-
-### Terminal SENT Status
-Once marked SENT, the row is never selected again. The dispatcher query explicitly filters `WHERE status = 'PENDING'`.
-
-## Failure Handling
-
-| Scenario | Handling |
-|----------|----------|
-| Transient send failure | Return to PENDING, retry (up to max-attempts) |
-| Permanent failure | Mark as FAILED after max-attempts |
-| Worker crash mid-send | Recovery sweep returns SENDING → PENDING after timeout |
-| Multiple app instances | FOR UPDATE SKIP LOCKED prevents double-claiming |
-| Appointment already past | Reminder scheduled for NOW, fires on next poll |
+**Separate claim/delivery transactions** – One failure doesn't roll back entire batch.
 
 ## Scale
 
-Current capacity: **50K appointments/day** (100K reminder rows/day)
+Current: 50K appointments/day (100K reminders/day)
 
-- Partial index on `(send_at) WHERE status = 'PENDING'` keeps queries fast
-- FOR UPDATE SKIP LOCKED enables horizontal scaling
-- Add instances → automatic load distribution
+Scaling: Add instances. Partial index on `(send_at) WHERE status = 'PENDING'` keeps queries fast.
 
-**Next steps for higher scale:**
-- Partition reminder table by dealership or time
-- Move to message broker (SQS/Kafka) with delayed delivery
+Next: Partition by dealership. Move to message broker (SQS/Kafka) for 1M+/day.
 
-## Production Roadmap
+## Production Gaps
 
-If I had another week:
-- Cancellation & reschedule endpoints
-- Real SMS/Email adapters with provider idempotency keys
-- Observability: Prometheus metrics, distributed tracing
-- Dead-letter queue for FAILED reminders
-- Time-zone-aware scheduling (respect quiet hours)
+What's missing for production:
+- Cancellation/reschedule endpoints
+- Real SMS/email adapters with provider idempotency keys
+- Metrics (Prometheus) + tracing (Jaeger)
+- Time-zone aware scheduling
 
 ## Project Structure
 
 ```
 src/main/java/com/mykaarma/reminder/
-├── config/             # Configuration properties
-├── domain/             # JPA entities (Appointment, Reminder)
-├── repository/         # Data access with custom queries
-├── service/            # Business logic (dispatch, planning, scheduling)
-├── notification/       # Sender interface + logging stub
-└── web/                # REST controllers + DTOs
+├── config/          Configuration
+├── domain/          JPA entities
+├── repository/      Data access (includes FOR UPDATE SKIP LOCKED query)
+├── service/         Business logic
+├── notification/    Sender interface + stub
+└── web/             REST API
 
-src/main/resources/
-└── db/migration/       # Flyway SQL migrations
-
-src/test/java/          # Integration tests with Testcontainers
+src/main/resources/db/migration/  Flyway SQL
+src/test/java/                    Integration tests
 ```
 
-## Questions & Assumptions
+## Key Files
 
-1. **Contact channel?** Kept `customerContact` as free text (email or phone). Stub sender is channel-agnostic.
-
-2. **Time zones?** All times in UTC. Production would need dealership/customer time zones for quiet-hours rules.
-
-3. **Cancellations?** Modeled with `AppointmentStatus.CANCELLED` but no endpoint yet. Dispatcher would skip reminders for cancelled appointments.
-
-4. **Delivery semantics?** Current: at-least-once (rare duplicate on crash between "provider ACK" and "DB mark SENT"). Add provider idempotency key for strict exactly-once.
-
-5. **Retention?** How long to keep SENT/FAILED rows before archiving?
+- `ReminderDispatchService.java` – The claim-check pattern
+- `ReminderRepository.java` – Contains the `FOR UPDATE SKIP LOCKED` query
+- `V1__init.sql` – Database schema with UNIQUE constraint
+- `ReminderIdempotencyIntegrationTest.java` – Proof of exactly-once
 
 ---
 
-Built by Harshit Kumar as a take-home assignment demonstrating production-quality Spring Boot architecture with provable correctness guarantees.
+**Stack:** Java 17 • Spring Boot • PostgreSQL  
+**Pattern:** Transactional outbox with materialized work queue  
+**Guarantee:** Database-enforced exactly-once delivery
