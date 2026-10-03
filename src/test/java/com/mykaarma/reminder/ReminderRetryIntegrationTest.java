@@ -40,7 +40,7 @@ class ReminderRetryIntegrationTest extends AbstractPostgresIntegrationTest {
         final ConcurrentHashMap<Long, Integer> successById = new ConcurrentHashMap<>();
 
         @Override
-        public void send(NotificationPayload payload) {
+        public void send(NotificationPayload payload, String idempotencyKey) {
             long id = payload.reminderId();
             int attempt = attemptsById.merge(id, 1, Integer::sum);
             if (permanentlyFailing.contains(id) || attempt <= failFirst) {

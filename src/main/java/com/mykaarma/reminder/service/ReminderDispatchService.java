@@ -121,14 +121,17 @@ public class ReminderDispatchService {
         }
 
         try {
-            notificationSender.send(new NotificationPayload(
-                    reminder.getId(),
-                    appointment.getPublicId(),
-                    appointment.getDealershipId(),
-                    appointment.getCustomerName(),
-                    appointment.getCustomerContact(),
-                    reminder.getLabel(),
-                    appointment.getScheduledAt()));
+            String idempotencyKey = "reminder-" + reminder.getId();
+            notificationSender.send(
+                    new NotificationPayload(
+                            reminder.getId(),
+                            appointment.getPublicId(),
+                            appointment.getDealershipId(),
+                            appointment.getCustomerName(),
+                            appointment.getCustomerContact(),
+                            reminder.getLabel(),
+                            appointment.getScheduledAt()),
+                    idempotencyKey);
             reminder.markSent(Instant.now());
             return true;
         } catch (RuntimeException ex) {

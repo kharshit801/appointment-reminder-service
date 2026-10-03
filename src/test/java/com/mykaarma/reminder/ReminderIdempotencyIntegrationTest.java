@@ -46,7 +46,7 @@ class ReminderIdempotencyIntegrationTest extends AbstractPostgresIntegrationTest
         final Map<Long, AtomicInteger> sendCounts = new ConcurrentHashMap<>();
 
         @Override
-        public void send(NotificationPayload payload) {
+        public void send(NotificationPayload payload, String idempotencyKey) {
             sendCounts.computeIfAbsent(payload.reminderId(), k -> new AtomicInteger()).incrementAndGet();
         }
 
