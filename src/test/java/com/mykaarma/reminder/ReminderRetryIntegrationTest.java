@@ -32,7 +32,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ReminderRetryIntegrationTest extends AbstractPostgresIntegrationTest {
 
-    /** Fails the first N send attempts per reminder id, then succeeds. */
+    /** 
+     * Fails the first N send attempts per reminder id, then succeeds.
+     * 
+     * Accepts but doesn't validate idempotency key since this test focuses on
+     * retry behavior, not key correctness.
+     */
     static class FlakyNotificationSender implements NotificationSender {
         volatile int failFirst = 0;
         final Set<Long> permanentlyFailing = ConcurrentHashMap.newKeySet();

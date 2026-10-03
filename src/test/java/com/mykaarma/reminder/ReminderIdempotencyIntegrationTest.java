@@ -41,13 +41,30 @@ class ReminderIdempotencyIntegrationTest extends AbstractPostgresIntegrationTest
     /**
      * A NotificationSender that counts how many times each reminder id is sent.
      * If any id is ever counted twice, the "never twice" guarantee is broken.
+     * 
+     * Validates idempotency key format (reminder-{id}) to ensure keys are stable.
      */
     static class CountingNotificationSender implements NotificationSender {
         final Map<Long, AtomicInteger> sendCounts = new ConcurrentHashMap<>();
+        final Map<Long, String> observedKeys = new ConcurrentHashMap<>();
 
         @Override
         public void send(NotificationPayload payload, String idempotencyKey) {
-            sendCounts.computeIfAbsent(payload.reminderId(), k -> new AtomicInteger()).incrementAndGet();
+            long reminderId = payload.reminderId();
+            
+            // Verify idempotency key format
+            String expectedKey = "reminder-" + reminderId;
+            if (!expectedKey.equals(idempotencyKey)) {
+                throw new AssertionError("Idempotency key mismatch: expected " + expectedKey + " but got " + idempotencyKey);
+            }
+            
+            // Verify key is stable across retries
+            String previousKey = observedKeys.putIfAbsent(reminderId, idempotencyKey);
+            if (previousKey != null && !previousKey.equals(idempotencyKey)) {
+                throw new AssertionError("Idempotency key changed for reminder " + reminderId + ": was " + previousKey + ", now " + idempotencyKey);
+            }
+            
+            sendCounts.computeIfAbsent(reminderId, k -> new AtomicInteger()).incrementAndGet();
         }
 
         int totalSends() {
@@ -84,6 +101,7 @@ class ReminderIdempotencyIntegrationTest extends AbstractPostgresIntegrationTest
         reminderRepository.deleteAllInBatch();
         appointmentRepository.deleteAllInBatch();
         sender.sendCounts.clear();
+        sender.observedKeys.clear();
     }
 
     @Test
